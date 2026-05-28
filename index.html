@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pokémon Gen 5 - Interactive Battle Engine</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #060606;
+            margin: 0;
+            font-family: 'Press Start 2P', cursive;
+            user-select: none;
+        }
+
+        #game-container {
+            width: 640px;
+            height: 450px;
+            position: relative;
+            border: 4px solid #fff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 40px rgba(0,0,0,0.9);
+        }
+
+        /* DYNAMIC ARENA BACKGROUNDS */
+        .arena-bg { position: absolute; width: 100%; height: 100%; top: 0; left: 0; z-index: 1; }
+        .arena-wallace { background: radial-gradient(circle at 50% 30%, #16365c 0%, #050d18 80%); }
+        .arena-steven { background: radial-gradient(circle at 50% 30%, #403830 0%, #1c1815 80%); }
+        .arena-red { background: linear-gradient(to bottom, #e2e8f0 0%, #94a3b8 60%, #475569 100%); }
+
+        .weather-layer { position: absolute; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+        .snow-particle { position: absolute; background: #fff; border-radius: 50%; opacity: 0.8; animation: fall linear infinite; }
+        @keyframes fall {
+            0% { transform: translateY(-10px) translateX(0); }
+            100% { transform: translateY(460px) translateX(60px); }
+        }
+
+        /* PERFECTED BATTLE PLATFORMS POSITIONING */
+        .platform { position: absolute; border-radius: 50%; transform: scaleY(0.38); z-index: 2; }
+        .plat-wallace { background: radial-gradient(ellipse, rgba(82,190,255,0.85) 0%, rgba(13,38,71,0.95) 70%); border: 3px solid #4da6ff; }
+        .plat-steven { background: radial-gradient(ellipse, #706050 0%, #2d2520 70%); border: 3px solid #a08870; }
+        .plat-red { background: radial-gradient(ellipse, #f1f5f9 0%, #cbd5e1 70%); border: 3px solid #fff; }
+
+        #enemy-platform { bottom: 210px; right: 40px; width: 200px; height: 80px; }
+        #player-platform { bottom: 115px; left: 30px; width: 260px; height: 100px; }
+
+        /* SCREENS SYSTEM */
+        .screen {
+            position: absolute; width: 100%; height: 100%; top: 0; left: 0;
+            box-sizing: border-box; z-index: 5; background-color: #1e293b;
+            padding: 15px; display: flex; flex-direction: column; align-items: center;
+        }
+
+        #trainer-screen { justify-content: center; }
+        #trainer-screen h2, #selection-screen h2, #item-screen h2 { color: #fff; font-size: 10px; margin-bottom: 15px; text-shadow: 2px 2px #000; text-align: center; line-height: 1.4; }
+        
+        .trainer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; max-width: 580px; }
+        .trainer-card {
+            background-color: #334155; border: 3px solid #fff; border-radius: 8px;
+            padding: 8px; cursor: pointer; text-align: center; color: white; font-size: 7px; transition: 0.2s;
+        }
+        .trainer-card:hover { transform: scale(1.05); background-color: #0284c7; }
+        .trainer-card img { height: 75px; image-rendering: pixelated; margin-bottom: 5px; }
+
+        #selection-screen { background-color: #14532d; display: none; }
+        .grid-wrapper { width: 100%; height: 290px; overflow-y: auto; padding-right: 4px; }
+        .grid-selection { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+        
+        .pkmn-card {
+            background-color: #f8fafc; border: 2px solid #1e293b; border-radius: 5px;
+            display: flex; flex-direction: column; align-items: center; padding: 4px; cursor: pointer;
+        }
+        .pkmn-card.selected { background-color: #4ade80; border-color: #fff; box-shadow: 0 0 10px #fff; }
+        .pkmn-card img { width: 50px; height: 50px; image-rendering: pixelated; }
+        .pkmn-info { font-size: 7px; color: #111; margin-top: 2px; font-weight: bold; text-align: center; }
+
+        #goto-items-btn {
+            margin-top: 12px; width: 60%; padding: 10px; background-color: #ea580c;
+            color: #fff; border: 2px solid #fff; border-radius: 4px; font-size: 8px; cursor: pointer; display: none;
+        }
+
+        #item-screen { background-color: #312e81; display: none; justify-content: center; }
+        .items-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; width: 100%; max-width: 500px; height: 290px; overflow-y: auto; padding-right: 5px; }
+        .item-card {
+            background-color: #1e1b4b; border: 3px solid #6366f1; border-radius: 6px; padding: 10px;
+            color: #fff; cursor: pointer; transition: 0.2s; text-align: left;
+        }
+        .item-card:hover { background-color: #4338ca; border-color: #fff; }
+        .item-name { font-size: 9px; color: #facc15; font-weight: bold; margin-bottom: 6px; }
+        .item-desc { font-size: 7px; line-height: 1.4; color: #e2e8f0; }
+
+        /* CALIBRATED BATTLE SCREEN VIEWPORT */
+        #battle-screen { display: none; background: transparent; z-index: 3; padding: 0; }
+
+        .sprite { position: absolute; image-rendering: pixelated; z-index: 3; transform-origin: bottom center; transition: filter 0.1s, transform 0.2s; }
+        #enemy-sprite { bottom: 225px; right: 90px; height: 100px; }
+        #player-sprite { bottom: 130px; left: 90px; height: 130px; }
+
+        /* HUDS LAYOUT */
+        .hud {
+            position: absolute; background-color: #fcfce0; border: 3px solid #334155;
+            border-radius: 6px; padding: 6px 10px; width: 210px; box-shadow: 3px 3px 0 rgba(0,0,0,0.4); font-size: 8px; z-index: 4;
+        }
+        #enemy-hud { top: 30px; left: 30px; }
+        #player-hud { bottom: 150px; right: 30px; }
+
+        .hp-bar-container { width: 100%; height: 6px; background-color: #475569; border: 1px solid #1e293b; border-radius: 3px; margin-top: 5px; }
+        .hp-bar { height: 100%; background-color: #22c55e; width: 100%; transition: width 0.3s ease; }
+        .hp-text { text-align: right; margin-top: 3px; font-size: 7px; color: #1e293b; }
+        .party-dots { margin-top: 4px; font-size: 7px; letter-spacing: 1px; color: #475569; }
+        .hud-item-tag { font-size: 6px; color: #b45309; margin-top: 2px; font-weight: bold; text-transform: uppercase; }
+
+        /* DIALOG BOX & COLORED BUTTONS MENU */
+        #dialog-box {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 115px;
+            background-color: #fff; border-top: 4px solid #1e293b; box-sizing: border-box;
+            padding: 15px; font-size: 9px; line-height: 1.6; display: flex;
+            justify-content: space-between; align-items: center; z-index: 6;
+        }
+        #message { width: 52%; color: #0f172a; word-wrap: break-word; }
+        .menu-container { width: 45%; display: none; flex-wrap: wrap; gap: 5px; }
+        
+        button.game-btn {
+            font-family: 'Press Start 2P', cursive; font-size: 7px; background-color: #f8fafc;
+            border: 2px solid #1e293b; border-radius: 4px; padding: 10px 0; cursor: pointer;
+            width: calc(50% - 3px); box-sizing: border-box; text-align: center; font-weight: bold;
+        }
+        button.game-btn:hover { filter: brightness(0.9); }
+        button.back-btn { width: 100% !important; background-color: #fecdd3 !important; color: #9f1239 !important; }
+
+        /* NEW: SWITCH MENU UI WITH SPRITES */
+        #menu-switch { width: 100%; display: none; flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding-bottom: 5px; align-items: center; }
+        .switch-card {
+            background-color: #f8fafc; border: 2px solid #1e293b; border-radius: 5px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 4px; cursor: pointer; min-width: 75px; box-sizing: border-box; transition: 0.2s;
+        }
+        .switch-card:hover:not(.disabled) { background-color: #e2e8f0; transform: translateY(-2px); }
+        .switch-card.disabled { opacity: 0.5; pointer-events: none; filter: grayscale(100%); }
+        .switch-card img { width: 45px; height: 45px; image-rendering: pixelated; }
+        .switch-card span { font-size: 6px; font-weight: bold; margin-bottom: 4px; color: #0f172a; }
+        .switch-card .hp-bar-container { width: 90%; height: 4px; margin: 0; }
+
+        /* GRAPHICAL PARTICLE LAYER */
+        .vfx-layer { position: absolute; width: 100%; height: 100%; top: 0; left: 0; pointer-events: none; z-index: 4; }
+        .vfx-burst { position: absolute; border-radius: 50%; pointer-events: none; animation: burst-out 0.4s ease-out forwards; }
+        @keyframes burst-out {
+            0% { transform: scale(0.2); opacity: 1; filter: brightness(2); }
+            100% { transform: scale(3.2); opacity: 0; filter: brightness(1); }
+        }
+
+        /* MOTIONS AND PHYSICS ENGINE CLASSES */
+        .dash-p { transform: translate(50px, -25px) scale(1.05) !important; }
+        .dash-e { transform: translate(-50px, 25px) scale(1.05) !important; }
+        .hurt-recoil { transform: translate(-20px, 10px) rotate(-6deg) !important; filter: brightness(2) sepia(1) saturate(4) hue-rotate(-50deg) !important; }
+        .hurt-recoil-e { transform: translate(20px, -10px) rotate(6deg) !important; filter: brightness(2) sepia(1) saturate(4) hue-rotate(-50deg) !important; }
+        .faint-slide { transform: translateY(180px) !important; opacity: 0; transition: all 0.6s ease-in; }
+        .screen-shake { animation: shake 0.25s linear; }
+
+        @keyframes shake { 0%, 100% { transform: translate(0,0); } 25% { transform: translate(-6px, 5px); } 50% { transform: translate(6px, -5px); } 75% { transform: translate(-4px, -4px); } }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="arena-background" class="arena-bg arena-wallace"></div>
+        <div id="weather-box" class="weather-layer"></div>
+        <div id="vfx-canvas" class="vfx-layer"></div>
+        
+        <div id="trainer-screen" class="screen">
+            <h2>CHOOSE YOUR OPPONENT:</h2>
+            <div class="trainer-grid">
+                <div class="trainer-card" onclick="selectTrainer('wallace')"><img src="https://play.pokemonshowdown.com/sprites/trainers/wallace.png"><div>CHAMPION<br>WALLACE</div></div>
+                <div class="trainer-card" onclick="selectTrainer('steven')"><img src="https://play.pokemonshowdown.com/sprites/trainers/steven.png"><div>CHAMPION<br>STEVEN</div></div>
+                <div class="trainer-card" onclick="selectTrainer('red')"><img src="https://play.pokemonshowdown.com/sprites/trainers/red.png"><div>LEADER<br>RED</div></div>
+                <div class="trainer-card" onclick="selectTrainer('cynthia')"><img src="https://play.pokemonshowdown.com/sprites/trainers/cynthia.png"><div>CHAMPION<br>CYNTHIA</div></div>
+                <div class="trainer-card" onclick="selectTrainer('n')"><img src="https://play.pokemonshowdown.com/sprites/trainers/n.png"><div>N<br>PLASMA KING</div></div>
+                <div class="trainer-card" onclick="selectTrainer('iris')"><img src="https://play.pokemonshowdown.com/sprites/trainers/iris.png"><div>CHAMPION<br>IRIS</div></div>
+            </div>
+        </div>
+
+        <div id="selection-screen" class="screen">
+            <h2>SELECT 6 SQUAD POKÉMON: <span id="count-txt">(0/6)</span></h2>
+            <div class="grid-wrapper">
+                <div class="grid-selection" id="selection-grid"></div>
+            </div>
+            <button id="goto-items-btn" onclick="openItemSelection()">CHOOSE SQUAD ITEM</button>
+        </div>
+
+        <div id="item-screen" class="screen">
+            <h2>CHOOSE A BATTLE ITEM FOR YOUR SQUAD:</h2>
+            <div class="items-grid" id="items-injector"></div>
+        </div>
+
+        <div id="battle-screen" class="screen">
+            <div id="enemy-platform" class="platform"></div>
+            <div id="player-platform" class="platform"></div>
+
+            <div id="enemy-hud" class="hud">
+                <div id="enemy-name">???</div>
+                <div class="hp-bar-container"><div id="enemy-hp-bar" class="hp-bar"></div></div>
+                <div class="party-dots" id="enemy-party"></div>
+            </div>
+            <img id="enemy-sprite" class="sprite" src="" alt="Enemy">
+
+            <div id="player-hud" class="hud">
+                <div id="player-name">???</div>
+                <div class="hp-bar-container"><div id="player-hp-bar" class="hp-bar"></div></div>
+                <div id="player-hp-text" class="hp-text">0/0</div>
+                <div class="party-dots" id="player-party"></div>
+                <div id="player-item-tag" class="hud-item-tag">Item: None</div>
+            </div>
+            <img id="player-sprite" class="sprite" src="" alt="Player">
+
+            <div id="dialog-box">
+                <div id="message">Booting systems...</div>
+                
+                <div id="menu-main" class="menu-container">
+                    <button class="game-btn" onclick="openSubMenu('moves')">FIGHT</button>
+                    <button class="game-btn" onclick="openSubMenu('switch')">SWITCH</button>
+                    <button class="game-btn" onclick="openSubMenu('potion')">POTION</button>
+                    <button class="game-btn" style="color:#aaa;" disabled>RUN</button>
+                </div>
+                <div id="menu-moves" class="menu-container"></div>
+                <div id="menu-switch"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const typeColors = {
+            normal: "#94a3b8", fighting: "#b91c1c", flying: "#7dd3fc", poison: "#a855f7",
+            ground: "#b45309", rock: "#78350f", bug: "#84cc16", ghost: "#6366f1",
+            steel: "#64748b", fire: "#f97316", water: "#3b82f6", grass: "#22c55e",
+            electric: "#eab308", psychic: "#ec4899", ice: "#06b6d4", dragon: "#4f46e5",
+            dark: "#1e293b", fairy: "#f472b6"
+        };
+
+        const typeChart = {
+            normal: { rock: 0.5, steel: 0.5, ghost: 0 },
+            fighting: { normal: 2, rock: 2, steel: 2, ice: 2, dark: 2, flying: 0.5, poison: 0.5, bug: 0.5, psychic: 0.5, fairy: 0.5, ghost: 0 },
+            flying: { fighting: 2, bug: 2, grass: 2, rock: 0.5, steel: 0.5, electric: 0.5 },
+            poison: { grass: 2, fairy: 2, poison: 0.5, ground: 0.5, rock: 0.5, ghost: 0.5, steel: 0 },
+            ground: { poison: 2, rock: 2, steel: 2, fire: 2, electric: 2, bug: 0.5, grass: 0.5, flying: 0 },
+            rock: { flying: 2, bug: 2, fire: 2, ice: 2, fighting: 0.5, ground: 0.5, steel: 0.5 },
+            bug: { grass: 2, psychic: 2, dark: 2, flying: 0.5, poison: 0.5, fighting: 0.5, ghost: 0.5, steel: 0.5, fire: 0.5, fairy: 0.5 },
+            ghost: { psychic: 2, ghost: 2, dark: 0.5, normal: 0 },
+            steel: { rock: 2, ice: 2, fairy: 2, steel: 0.5, fire: 0.5, water: 0.5, electric: 0.5 },
+            fire: { bug: 2, steel: 2, grass: 2, ice: 2, rock: 0.5, fire: 0.5, water: 0.5, dragon: 0.5 },
+            water: { ground: 2, rock: 2, fire: 2, water: 0.5, grass: 0.5, dragon: 0.5 },
+            grass: { ground: 2, rock: 2, water: 2, flying: 0.5, poison: 0.5, bug: 0.5, steel: 0.5, fire: 0.5, grass: 0.5, dragon: 0.5 },
+            electric: { flying: 2, water: 2, grass: 0.5, electric: 0.5, dragon: 0.5, ground: 0 },
+            psychic: { fighting: 2, poison: 2, steel: 0.5, psychic: 0.5, dark: 0 },
+            ice: { flying: 2, ground: 2, grass: 2, dragon: 2, steel: 0.5, fire: 0.5, water: 0.5, ice: 0.5 },
+            dragon: { dragon: 2, steel: 0.5, fairy: 0 },
+            dark: { psychic: 2, ghost: 2, fighting: 0.5, dark: 0.5, fairy: 0.5 },
+            fairy: { fighting: 2, dragon: 2, dark: 2, poison: 0.5, steel: 0.5, fire: 0.5 }
+        };
+
+        // MEGA EXPANSÃO: 52 POKÉMON DISPONÍVEIS
+        const pokemonPool = [
+            { name: "Charizard", type: "fire", maxHp: 245, moves: [{n:"Blast Burn", d:65, t:"fire"},{n:"Air Slash", d:45, t:"flying"},{n:"Dragon Claw", d:45, t:"dragon"},{n:"Flamethrower", d:50, t:"fire"}] },
+            { name: "Blastoise", type: "water", maxHp: 255, moves: [{n:"Hydro Cannon", d:65, t:"water"},{n:"Ice Beam", d:45, t:"ice"},{n:"Flash Cannon", d:45, t:"steel"},{n:"Surf", d:50, t:"water"}] },
+            { name: "Venusaur", type: "grass", maxHp: 250, moves: [{n:"Frenzy Plant", d:65, t:"grass"},{n:"Sludge Bomb", d:45, t:"poison"},{n:"Giga Drain", d:40, t:"grass"},{n:"Take Down", d:45, t:"normal"}] },
+            { name: "Sceptile", type: "grass", maxHp: 220, moves: [{n:"Leaf Blade", d:60, t:"grass"},{n:"Dragon Pulse", d:45, t:"dragon"},{n:"Giga Drain", d:40, t:"grass"},{n:"Quick Attack", d:30, t:"normal"}] },
+            { name: "Blaziken", type: "fire", maxHp: 235, moves: [{n:"Blaze Kick", d:60, t:"fire"},{n:"Sky Uppercut", d:55, t:"fighting"},{n:"Brave Bird", d:50, t:"flying"},{n:"Flamethrower", d:45, t:"fire"}] },
+            { name: "Swampert", type: "ground", maxHp: 260, moves: [{n:"Earthquake", d:65, t:"ground"},{n:"Surf", d:50, t:"water"},{n:"Ice Beam", d:45, t:"ice"},{n:"Mud Shot", d:40, t:"ground"}] },
+            { name: "Pikachu", type: "electric", maxHp: 185, moves: [{n:"Volt Tackle", d:65, t:"electric"},{n:"Iron Tail", d:45, t:"steel"},{n:"Thunderbolt", d:55, t:"electric"},{n:"Quick Attack", d:30, t:"normal"}] },
+            { name: "Mewtwo", type: "psychic", maxHp: 265, moves: [{n:"Psystrike", d:70, t:"psychic"},{n:"Aura Sphere", d:50, t:"fighting"},{n:"Thunderbolt", d:50, t:"electric"},{n:"Psychic", d:60, t:"psychic"}] },
+            { name: "Dragonite", type: "dragon", maxHp: 255, moves: [{n:"Outrage", d:65, t:"dragon"},{n:"Hyper Beam", d:60, t:"normal"},{n:"Fire Punch", d:45, t:"fire"},{n:"Dragon Pulse", d:50, t:"dragon"}] },
+            { name: "Tyranitar", type: "rock", maxHp: 260, moves: [{n:"Stone Edge", d:60, t:"rock"},{n:"Crunch", d:50, t:"dark"},{n:"Earthquake", d:60, t:"ground"},{n:"Hyper Beam", d:55, t:"normal"}] },
+            { name: "Metagross", type: "steel", maxHp: 250, moves: [{n:"Meteor Mash", d:65, t:"steel"},{n:"Zen Headbutt", d:50, t:"psychic"},{n:"Earthquake", d:55, t:"ground"},{n:"Psychic", d:50, t:"psychic"}] },
+            { name: "Salamence", type: "dragon", maxHp: 250, moves: [{n:"Dragon Claw", d:60, t:"dragon"},{n:"Zen Headbutt", d:45, t:"psychic"},{n:"Flamethrower", d:45, t:"fire"},{n:"Hydro Pump", d:50, t:"water"}] },
+            { name: "Gengar", type: "ghost", maxHp: 205, moves: [{n:"Shadow Ball", d:55, t:"ghost"},{n:"Sludge Bomb", d:45, t:"poison"},{n:"Dark Pulse", d:45, t:"dark"},{n:"Dazzling Gleam", d:40, t:"fairy"}] },
+            { name: "Garchomp", type: "dragon", maxHp: 255, moves: [{n:"Dragon Rush", d:65, t:"dragon"},{n:"Earthquake", d:65, t:"ground"},{n:"Slash", d:35, t:"normal"},{n:"Crunch", d:45, t:"dark"}] },
+            { name: "Lucario", type: "fighting", maxHp: 220, moves: [{n:"Aura Sphere", d:60, t:"fighting"},{n:"Close Combat", d:60, t:"fighting"},{n:"Dragon Pulse", d:45, t:"dragon"},{n:"Extreme Speed", d:40, t:"normal"}] },
+            { name: "Gardevoir", type: "fairy", maxHp: 210, moves: [{n:"Psychic", d:60, t:"psychic"},{n:"Moonblast", d:55, t:"fairy"},{n:"Thunderbolt", d:45, t:"electric"},{n:"Shadow Ball", d:45, t:"ghost"}] },
+            { name: "Snorlax", type: "normal", maxHp: 285, moves: [{n:"Body Slam", d:50, t:"normal"},{n:"Crunch", d:45, t:"dark"},{n:"Heavy Slam", d:55, t:"steel"},{n:"Hyper Beam", d:65, t:"normal"}] },
+            { name: "Umbreon", type: "dark", maxHp: 245, moves: [{n:"Dark Pulse", d:45, t:"dark"},{n:"Psychic", d:45, t:"psychic"},{n:"Quick Attack", d:30, t:"normal"},{n:"Iron Tail", d:40, t:"steel"}] },
+            { name: "Serperior", type: "grass", maxHp: 230, moves: [{n:"Leaf Storm", d:65, t:"grass"},{n:"Giga Drain", d:45, t:"grass"},{n:"Dragon Pulse", d:45, t:"dragon"},{n:"Slash", d:35, t:"normal"}] },
+            { name: "Emboar", type: "fire", maxHp: 265, moves: [{n:"Flare Blitz", d:65, t:"fire"},{n:"Hammer Arm", d:55, t:"fighting"},{n:"Head Smash", d:50, t:"rock"},{n:"Flamethrower", d:45, t:"fire"}] },
+            { name: "Samurott", type: "water", maxHp: 245, moves: [{n:"Hydro Pump", d:65, t:"water"},{n:"Aqua Jet", d:40, t:"water"},{n:"X-Scissor", d:45, t:"bug"},{n:"Ice Beam", d:45, t:"ice"}] },
+            { name: "Zoroark", type: "dark", maxHp: 210, moves: [{n:"Night Daze", d:60, t:"dark"},{n:"Foul Play", d:50, t:"dark"},{n:"Flamethrower", d:45, t:"fire"},{n:"Shadow Ball", d:45, t:"ghost"}] },
+            { name: "Volcarona", type: "fire", maxHp: 240, moves: [{n:"Fiery Dance", d:60, t:"fire"},{n:"Bug Buzz", d:55, t:"bug"},{n:"Hurricane", d:50, t:"flying"},{n:"Psychic", d:45, t:"psychic"}] },
+            { name: "Hydreigon", type: "dragon", maxHp: 250, moves: [{n:"Draco Meteor", d:70, t:"dragon"},{n:"Dark Pulse", d:55, t:"dark"},{n:"Dragon Pulse", d:50, t:"dragon"},{n:"Surf", d:45, t:"water"}] },
+            { name: "Haxorus", type: "dragon", maxHp: 230, moves: [{n:"Outrage", d:65, t:"dragon"},{n:"Dragon Claw", d:50, t:"dragon"},{n:"Earthquake", d:55, t:"ground"},{n:"Slash", d:35, t:"normal"}] },
+            { name: "Chandelure", type: "fire", maxHp: 215, moves: [{n:"Shadow Ball", d:60, t:"ghost"},{n:"Overheat", d:65, t:"fire"},{n:"Flamethrower", d:45, t:"fire"},{n:"Psychic", d:45, t:"psychic"}] },
+            { name: "Electivire", type: "electric", maxHp: 235, moves: [{n:"Thunderbolt", d:55, t:"electric"},{n:"Thunder Punch", d:50, t:"electric"},{n:"Ice Punch", d:45, t:"ice"},{n:"Earthquake", d:55, t:"ground"}] },
+            { name: "Magmortar", type: "fire", maxHp: 235, moves: [{n:"Fire Blast", d:65, t:"fire"},{n:"Flamethrower", d:50, t:"fire"},{n:"Thunderbolt", d:45, t:"electric"},{n:"Psychic", d:45, t:"psychic"}] },
+            { name: "Typhlosion", type: "fire", maxHp: 240, moves: [{n:"Eruption", d:65, t:"fire"},{n:"Flamethrower", d:50, t:"fire"},{n:"Swift", d:40, t:"normal"},{n:"Rollout", d:45, t:"rock"}] },
+            { name: "Feraligatr", type: "water", maxHp: 250, moves: [{n:"Hydro Pump", d:60, t:"water"},{n:"Crunch", d:50, t:"dark"},{n:"Ice Punch", d:45, t:"ice"},{n:"Slash", d:40, t:"normal"}] },
+            { name: "Meganium", type: "grass", maxHp: 260, moves: [{n:"Giga Drain", d:45, t:"grass"},{n:"Petal Blizzard", d:55, t:"grass"},{n:"Body Slam", d:45, t:"normal"},{n:"Ancient Power", d:45, t:"rock"}] },
+            { name: "Greninja", type: "water", maxHp: 215, moves: [{n:"Hydro Pump", d:60, t:"water"},{n:"Water Shuriken", d:45, t:"water"},{n:"Dark Pulse", d:50, t:"dark"},{n:"Ice Beam", d:45, t:"ice"}] },
+            { name: "Scizor", type: "steel", maxHp: 235, moves: [{n:"Bullet Punch", d:45, t:"steel"},{n:"X-Scissor", d:55, t:"bug"},{n:"Iron Head", d:50, t:"steel"},{n:"Quick Attack", d:35, t:"normal"}] },
+            { name: "Alakazam", type: "psychic", maxHp: 195, moves: [{n:"Psychic", d:65, t:"psychic"},{n:"Shadow Ball", d:50, t:"ghost"},{n:"Dazzling Gleam", d:45, t:"fairy"},{n:"Aura Sphere", d:50, t:"fighting"}] },
+            { name: "Machamp", type: "fighting", maxHp: 255, moves: [{n:"Dynamic Punch", d:65, t:"fighting"},{n:"Cross Chop", d:55, t:"fighting"},{n:"Rock Slide", d:45, t:"rock"},{n:"Strength", d:40, t:"normal"}] },
+            { name: "Togekiss", type: "fairy", maxHp: 245, moves: [{n:"Air Slash", d:55, t:"flying"},{n:"Dazzling Gleam", d:55, t:"fairy"},{n:"Aura Sphere", d:50, t:"fighting"},{n:"Extreme Speed", d:40, t:"normal"}] },
+            { name: "Mamoswine", type: "ice", maxHp: 270, moves: [{n:"Icicle Crash", d:60, t:"ice"},{n:"Earthquake", d:65, t:"ground"},{n:"Ice Beam", d:45, t:"ice"},{n:"Take Down", d:45, t:"normal"}] },
+            { name: "Sylveon", type: "fairy", maxHp: 250, moves: [{n:"Moonblast", d:60, t:"fairy"},{n:"Hyper Voice", d:50, t:"normal"},{n:"Psyshock", d:45, t:"psychic"},{n:"Shadow Ball", d:45, t:"ghost"}] },
+            { name: "Reshiram", type: "fire", maxHp: 265, moves: [{n:"Blue Flare", d:70, t:"fire"},{n:"Fusion Flare", d:60, t:"fire"},{n:"Dragon Pulse", d:55, t:"dragon"},{n:"Extrasensory", d:45, t:"psychic"}] },
+            { name: "Zekrom", type: "electric", maxHp: 265, moves: [{n:"Bolt Strike", d:70, t:"electric"},{n:"Fusion Bolt", d:60, t:"electric"},{n:"Dragon Claw", d:55, t:"dragon"},{n:"Crunch", d:45, t:"dark"}] },
+            // NEW INJECTIONS
+            { name: "Infernape", type: "fire", maxHp: 235, moves: [{n:"Flare Blitz", d:65, t:"fire"},{n:"Close Combat", d:65, t:"fighting"},{n:"Mach Punch", d:40, t:"fighting"},{n:"Thunder Punch", d:45, t:"electric"}] },
+            { name: "Torterra", type: "grass", maxHp: 260, moves: [{n:"Wood Hammer", d:65, t:"grass"},{n:"Earthquake", d:65, t:"ground"},{n:"Crunch", d:50, t:"dark"},{n:"Stone Edge", d:55, t:"rock"}] },
+            { name: "Empoleon", type: "water", maxHp: 250, moves: [{n:"Hydro Pump", d:65, t:"water"},{n:"Flash Cannon", d:55, t:"steel"},{n:"Ice Beam", d:50, t:"ice"},{n:"Drill Peck", d:45, t:"flying"}] },
+            { name: "Rayquaza", type: "dragon", maxHp: 275, moves: [{n:"Outrage", d:70, t:"dragon"},{n:"Dragon Ascent", d:70, t:"flying"},{n:"Earthquake", d:60, t:"ground"},{n:"Extreme Speed", d:50, t:"normal"}] },
+            { name: "Groudon", type: "ground", maxHp: 270, moves: [{n:"Precipice Blades", d:70, t:"ground"},{n:"Earthquake", d:65, t:"ground"},{n:"Fire Punch", d:50, t:"fire"},{n:"Stone Edge", d:60, t:"rock"}] },
+            { name: "Kyogre", type: "water", maxHp: 270, moves: [{n:"Water Spout", d:70, t:"water"},{n:"Hydro Pump", d:65, t:"water"},{n:"Ice Beam", d:55, t:"ice"},{n:"Thunder", d:60, t:"electric"}] },
+            { name: "Arcanine", type: "fire", maxHp: 255, moves: [{n:"Flare Blitz", d:65, t:"fire"},{n:"Extreme Speed", d:50, t:"normal"},{n:"Wild Charge", d:55, t:"electric"},{n:"Crunch", d:50, t:"dark"}] },
+            { name: "Jolteon", type: "electric", maxHp: 205, moves: [{n:"Thunderbolt", d:55, t:"electric"},{n:"Volt Switch", d:45, t:"electric"},{n:"Shadow Ball", d:50, t:"ghost"},{n:"Quick Attack", d:35, t:"normal"}] },
+            { name: "Vaporeon", type: "water", maxHp: 295, moves: [{n:"Hydro Pump", d:60, t:"water"},{n:"Surf", d:50, t:"water"},{n:"Ice Beam", d:50, t:"ice"},{n:"Shadow Ball", d:45, t:"ghost"}] },
+            { name: "Espeon", type: "psychic", maxHp: 205, moves: [{n:"Psychic", d:60, t:"psychic"},{n:"Psyshock", d:50, t:"psychic"},{n:"Shadow Ball", d:50, t:"ghost"},{n:"Dazzling Gleam", d:45, t:"fairy"}] },
+            { name: "Gyarados", type: "water", maxHp: 260, moves: [{n:"Waterfall", d:55, t:"water"},{n:"Dragon Dance", d:40, t:"dragon"},{n:"Ice Fang", d:45, t:"ice"},{n:"Earthquake", d:60, t:"ground"}] },
+            { name: "Glaceon", type: "ice", maxHp: 215, moves: [{n:"Ice Beam", d:60, t:"ice"},{n:"Blizzard", d:65, t:"ice"},{n:"Shadow Ball", d:50, t:"ghost"},{n:"Water Pulse", d:45, t:"water"}] }
+        ];
+
+        // EXPANDED 12 BATTLE ITEMS
+        const BattleItems = [
+            { id: "leftovers", name: "Leftovers", desc: "Regenerates +15 HP passively at the end of every turn you act." },
+            { id: "lifeorb", name: "Life Orb", desc: "Boosts all your attacks damage by +30%, but you recoil 15 HP." },
+            { id: "expertbelt", name: "Expert Belt", desc: "Super Effective moves deal an additional +40% devastation." },
+            { id: "rockyhelmet", name: "Rocky Helmet", desc: "Reflects 20 fixed recoil damage when hit by a rival attack." },
+            { id: "choiceband", name: "Choice Band", desc: "Pumps your muscles! Increases raw damage of all attacks by +50%." },
+            { id: "assaultvest", name: "Assault Vest", desc: "Fortified armor shield. Reduces all incoming enemy damage by 30%." },
+            { id: "shellbell", name: "Shell Bell", desc: "Life-steal link. Restores HP equal to 25% of the damage you inflict." },
+            { id: "brightpowder", name: "Bright Powder", desc: "Grants a 15% chance to completely dodge any incoming enemy attack." },
+            { id: "kingsrock", name: "King's Rock", desc: "Your attacks have a 20% chance to make the enemy flinch (skip their turn)." },
+            { id: "sitrusberry", name: "Sitrus Berry", desc: "Heals 30% of Max HP when dropping below 50%. (Once per Pokémon)." },
+            { id: "muscleband", name: "Muscle Band", desc: "Boosts the raw power of all your moves by +15% without any drawbacks." },
+            { id: "focusband", name: "Focus Band", desc: "Grants a 15% chance to survive a fatal knockout hit with exactly 1 HP." }
+        ];
+
+        const trainersDatabase = {
+            wallace: {
+                name: "Wallace", title: "Champion Wallace", bgClass: "arena-wallace", platClass: "plat-wallace",
+                team: [
+                    { name: "Wailord", type: "water", maxHp: 275, hp: 275, moves: [{n:"Water Spout", d:55, t:"water"},{n:"Blizzard", d:45, t:"ice"},{n:"Hydro Pump", d:55, t:"water"},{n:"Body Slam", d:40, t:"normal"}] },
+                    { name: "Tentacruel", type: "water", maxHp: 215, hp: 215, moves: [{n:"Hydro Pump", d:55, t:"water"},{n:"Sludge Bomb", d:45, t:"poison"},{n:"Ice Beam", d:40, t:"ice"},{n:"Surf", d:45, t:"water"}] },
+                    { name: "Ludicolo", type: "grass", maxHp: 225, hp: 225, moves: [{n:"Giga Drain", d:45, t:"grass"},{n:"Surf", d:45, t:"water"},{n:"Zen Headbutt", d:40, t:"psychic"},{n:"Energy Ball", d:50, t:"grass"}] },
+                    { name: "Whiscash", type: "ground", maxHp: 235, hp: 235, moves: [{n:"Earthquake", d:50, t:"ground"},{n:"Muddy Water", d:45, t:"water"},{n:"Zen Headbutt", d:40, t:"psychic"},{n:"Rock Slide", d:40, t:"rock"}] },
+                    { name: "Gyarados", type: "water", maxHp: 250, hp: 250, moves: [{n:"Hyper Beam", d:60, t:"normal"},{n:"Hydro Pump", d:55, t:"water"},{n:"Dragon Claw", d:45, t:"dragon"},{n:"Bite", d:35, t:"dark"}] },
+                    { name: "Milotic", type: "water", maxHp: 260, hp: 260, moves: [{n:"Hydro Pump", d:65, t:"water"},{n:"Ice Beam", d:50, t:"ice"},{n:"Psychic", d:45, t:"psychic"},{n:"Surf", d:50, t:"water"}] }
+                ]
+            },
+            steven: {
+                name: "Steven", title: "Champion Steven", bgClass: "arena-steven", platClass: "plat-steven",
+                team: [
+                    { name: "Skarmory", type: "steel", maxHp: 220, hp: 220, moves: [{n:"Steel Wing", d:45, t:"steel"},{n:"Air Slash", d:45, t:"flying"},{n:"Swift", d:40, t:"normal"},{n:"X-Scissor", d:40, t:"bug"}] },
+                    { name: "Claydol", type: "ground", maxHp: 225, hp: 225, moves: [{n:"Earthquake", d:50, t:"ground"},{n:"Psychic", d:45, t:"psychic"},{n:"Ancient Power", d:40, t:"rock"},{n:"Shadow Ball", d:45, t:"ghost"}] },
+                    { name: "Aggron", type: "rock", maxHp: 240, hp: 240, moves: [{n:"Iron Tail", d:55, t:"steel"},{n:"Rock Slide", d:50, t:"rock"},{n:"Earthquake", d:55, t:"ground"},{n:"Take Down", d:45, t:"normal"}] },
+                    { name: "Cradily", type: "rock", maxHp: 235, hp: 235, moves: [{n:"Giga Drain", d:45, t:"grass"},{n:"Ancient Power", d:45, t:"rock"},{n:"Energy Ball", d:50, t:"grass"},{n:"Sludge Bomb", d:40, t:"poison"}] },
+                    { name: "Armaldo", type: "rock", maxHp: 240, hp: 240, moves: [{n:"X-Scissor", d:50, t:"bug"},{n:"Rock Blast", d:45, t:"rock"},{n:"Slash", d:40, t:"normal"},{n:"Water Pulse", d:35, t:"water"}] },
+                    { name: "Metagross", type: "steel", maxHp: 260, hp: 260, moves: [{n:"Meteor Mash", d:65, t:"steel"},{n:"Zen Headbutt", d:55, t:"psychic"},{n:"Earthquake", d:60, t:"ground"},{n:"Psychic", d:55, t:"psychic"}] }
+                ]
+            },
+            red: {
+                name: "Red", title: "Trainer Red", bgClass: "arena-red", platClass: "plat-red",
+                team: [
+                    { name: "Pikachu", type: "electric", maxHp: 195, hp: 195, moves: [{n:"Volt Tackle", d:70, t:"electric"},{n:"Thunderbolt", d:55, t:"electric"},{n:"Iron Tail", d:45, t:"steel"},{n:"Quick Attack", d:35, t:"normal"}] },
+                    { name: "Lapras", type: "water", maxHp: 275, hp: 275, moves: [{n:"Blizzard", d:55, t:"ice"},{n:"Surf", d:50, t:"water"},{n:"Body Slam", d:45, t:"normal"},{n:"Psychic", d:45, t:"psychic"}] },
+                    { name: "Snorlax", type: "normal", maxHp: 295, hp: 295, moves: [{n:"Body Slam", d:55, t:"normal"},{n:"Crunch", d:45, t:"dark"},{n:"Heavy Slam", d:55, t:"steel"},{n:"Hyper Beam", d:65, t:"normal"}] },
+                    { name: "Venusaur", type: "grass", maxHp: 250, hp: 250, moves: [{n:"Frenzy Plant", d:65, t:"grass"},{n:"Sludge Bomb", d:45, t:"poison"},{n:"Giga Drain", d:45, t:"grass"},{n:"Take Down", d:40, t:"normal"}] },
+                    { name: "Charizard", type: "fire", maxHp: 250, hp: 250, moves: [{n:"Blast Burn", d:65, t:"fire"},{n:"Air Slash", d:45, t:"flying"},{n:"Flamethrower", d:50, t:"fire"},{n:"Dragon Claw", d:45, t:"dragon"}] },
+                    { name: "Blastoise", type: "water", maxHp: 260, hp: 260, moves: [{n:"Hydro Cannon", d:65, t:"water"},{n:"Ice Beam", d:50, t:"ice"},{n:"Flash Cannon", d:45, t:"steel"},{n:"Surf", d:50, t:"water"}] }
+                ]
+            },
+            cynthia: {
+                name: "Cynthia", title: "Champion Cynthia", bgClass: "arena-steven", platClass: "plat-steven",
+                team: [
+                    { name: "Gengar", type: "ghost", maxHp: 215, hp: 215, moves: [{n:"Shadow Ball", d:55, t:"ghost"},{n:"Sludge Bomb", d:45, t:"poison"},{n:"Dark Pulse", d:45, t:"dark"},{n:"Psychic", d:50, t:"psychic"}] },
+                    { name: "Gardevoir", type: "fairy", maxHp: 220, hp: 220, moves: [{n:"Psychic", d:60, t:"psychic"},{n:"Moonblast", d:55, t:"fairy"},{n:"Shadow Ball", d:45, t:"ghost"},{n:"Energy Ball", d:45, t:"grass"}] },
+                    { name: "Lucario", type: "fighting", maxHp: 225, hp: 225, moves: [{n:"Aura Sphere", d:60, t:"fighting"},{n:"Close Combat", d:60, t:"fighting"},{n:"Dragon Pulse", d:50, t:"dragon"},{n:"Extreme Speed", d:40, t:"normal"}] },
+                    { name: "Tyranitar", type: "rock", maxHp: 255, hp: 255, moves: [{n:"Stone Edge", d:60, t:"rock"},{n:"Crunch", d:50, t:"dark"},{n:"Earthquake", d:60, t:"ground"},{n:"Iron Head", d:45, t:"steel"}] },
+                    { name: "Milotic", type: "water", maxHp: 265, hp: 265, moves: [{n:"Hydro Pump", d:65, t:"water"},{n:"Ice Beam", d:50, t:"ice"},{n:"Surf", d:50, t:"water"},{n:"Dragon Pulse", d:45, t:"dragon"}] },
+                    { name: "Garchomp", type: "dragon", maxHp: 265, hp: 265, moves: [{n:"Dragon Rush", d:65, t:"dragon"},{n:"Earthquake", d:65, t:"ground"},{n:"Crunch", d:50, t:"dark"},{n:"Slash", d:40, t:"normal"}] }
+                ]
+            },
+            n: {
+                name: "N", title: "Trainer N", bgClass: "arena-red", platClass: "plat-red",
+                team: [
+                    { name: "Zoroark", type: "dark", maxHp: 220, hp: 220, moves: [{n:"Night Daze", d:60, t:"dark"},{n:"Foul Play", d:50, t:"dark"},{n:"Flamethrower", d:45, t:"fire"},{n:"Shadow Ball", d:45, t:"ghost"}] },
+                    { name: "Haxorus", type: "dragon", maxHp: 235, hp: 235, moves: [{n:"Outrage", d:65, t:"dragon"},{n:"Dragon Claw", d:50, t:"dragon"},{n:"Earthquake", d:55, t:"ground"},{n:"Slash", d:35, t:"normal"}] },
+                    { name: "Chandelure", type: "fire", maxHp: 215, hp: 215, moves: [{n:"Overheat", d:65, t:"fire"},{n:"Shadow Ball", d:60, t:"ghost"},{n:"Flamethrower", d:45, t:"fire"},{n:"Psychic", d:45, t:"psychic"}] },
+                    { name: "Volcarona", type: "fire", maxHp: 240, hp: 240, moves: [{n:"Fiery Dance", d:60, t:"fire"},{n:"Bug Buzz", d:55, t:"bug"},{n:"Hurricane", d:50, t:"flying"},{n:"Psychic", d:45, t:"psychic"}] },
+                    { name: "Samurott", type: "water", maxHp: 250, hp: 250, moves: [{n:"Hydro Pump", d:65, t:"water"},{n:"Aqua Jet", d:40, t:"water"},{n:"Ice Beam", d:45, t:"ice"},{n:"Slash", d:35, t:"normal"}] },
+                    { name: "Hydreigon", type: "dark", maxHp: 255, hp: 255, moves: [{n:"Draco Meteor", d:70, t:"dragon"},{n:"Dark Pulse", d:55, t:"dark"},{n:"Dragon Pulse", d:50, t:"dragon"},{n:"Surf", d:45, t:"water"}] }
+                ]
+            },
+            iris: {
+                name: "Iris", title: "Champion Iris", bgClass: "arena-wallace", platClass: "plat-wallace",
+                team: [
+                    { name: "Hydreigon", type: "dark", maxHp: 250, hp: 250, moves: [{n:"Dragon Pulse", d:55, t:"dragon"},{n:"Dark Pulse", d:55, t:"dark"},{n:"Flamethrower", d:50, t:"fire"},{n:"Surf", d:45, t:"water"}] },
+                    { name: "Metagross", type: "steel", maxHp: 250, hp: 250, moves: [{n:"Meteor Mash", d:65, t:"steel"},{n:"Zen Headbutt", d:50, t:"psychic"},{n:"Earthquake", d:55, t:"ground"},{n:"Psychic", d:50, t:"psychic"}] },
+                    { name: "Salamence", type: "dragon", maxHp: 250, hp: 250, moves: [{n:"Dragon Claw", d:60, t:"dragon"},{n:"Zen Headbutt", d:45, t:"psychic"},{n:"Flamethrower", d:45, t:"fire"},{n:"Hydro Pump", d:50, t:"water"}] },
+                    { name: "Lapras", type: "water", maxHp: 275, hp: 275, moves: [{n:"Blizzard", d:55, t:"ice"},{n:"Surf", d:50, t:"water"},{n:"Thunderbolt", d:45, t:"electric"},{n:"Body Slam", d:45, t:"normal"}] },
+                    { name: "Serperior", type: "grass", maxHp: 235, hp: 235, moves: [{n:"Leaf Storm", d:65, t:"grass"},{n:"Giga Drain", d:45, t:"grass"},{n:"Dragon Pulse", d:45, t:"dragon"},{n:"Quick Attack", d:30, t:"normal"}] },
+                    { name: "Haxorus", type: "dragon", maxHp: 260, hp: 260, moves: [{n:"Outrage", d:65, t:"dragon"},{n:"Earthquake", d:60, t:"ground"},{n:"Dragon Claw", d:50, t:"dragon"},{n:"Dual Chop", d:45, t:"dragon"}] }
+                ]
+            }
+        };
+
+        let selectedKeys = [];
+        let playerTeam = [];
+        let enemyTrainer = {};
+        let enemyTeam = [];
+        let pActive = 0, eActive = 0;
+        let isPlayerTurn = true;
+        let potionsLeft = 3;
+        let chosenCombatItem = "";
+
+        function selectTrainer(key) {
+            enemyTrainer = trainersDatabase[key];
+            enemyTeam = JSON.parse(JSON.stringify(enemyTrainer.team)); 
+            
+            document.getElementById("arena-background").className = "arena-bg " + enemyTrainer.bgClass;
+            document.getElementById("enemy-platform").className = "platform " + enemyTrainer.platClass;
+            document.getElementById("player-platform").className = "platform " + enemyTrainer.platClass;
+
+            triggerSnowWeather(key === 'red');
+            document.getElementById("trainer-screen").style.display = "none";
+            document.getElementById("selection-screen").style.display = "flex";
+            buildPokemonGrid();
+        }
+
+        function triggerSnowWeather(enable) {
+            const wBox = document.getElementById("weather-box"); wBox.innerHTML = "";
+            if (!enable) return;
+            for (let i = 0; i < 20; i++) {
+                let s = document.createElement("div"); s.className = "snow-particle";
+                s.style.left = Math.random() * 640 + "px"; s.style.top = Math.random() * -450 + "px";
+                s.style.width = s.style.height = (3 + Math.random() * 4) + "px";
+                s.style.animationDuration = (2 + Math.random() * 3) + "s";
+                wBox.appendChild(s);
+            }
+        }
+
+        function buildPokemonGrid() {
+            const grid = document.getElementById("selection-grid"); grid.innerHTML = "";
+            pokemonPool.forEach((p, idx) => {
+                grid.innerHTML += `
+                    <div class="pkmn-card" id="card-${idx}" onclick="toggleSelect(${idx})">
+                        <img src="https://play.pokemonshowdown.com/sprites/gen5/${p.name.toLowerCase()}.png">
+                        <div class="pkmn-info">${p.name}</div>
+                    </div>
+                `;
+            });
+        }
+
+        function toggleSelect(idx) {
+            let card = document.getElementById(`card-${idx}`);
+            let foundIndex = selectedKeys.indexOf(idx);
+            if (foundIndex > -1) {
+                selectedKeys.splice(foundIndex, 1); card.classList.remove("selected");
+            } else if (selectedKeys.length < 6) {
+                selectedKeys.push(idx); card.classList.add("selected");
+            }
+            document.getElementById("count-txt").innerText = `(${selectedKeys.length}/6)`;
+            document.getElementById("goto-items-btn").style.display = selectedKeys.length === 6 ? "block" : "none";
+        }
+
+        function openItemSelection() {
+            document.getElementById("selection-screen").style.display = "none";
+            document.getElementById("item-screen").style.display = "flex";
+            
+            const injector = document.getElementById("items-injector");
+            injector.innerHTML = BattleItems.map(item => `
+                <div class="item-card" onclick="confirmAllSystems('${item.id}')">
+                    <div class="item-name">${item.name}</div>
+                    <div class="item-desc">${item.desc}</div>
+                </div>
+            `).join("");
+        }
+
+        function confirmAllSystems(itemId) {
+            chosenCombatItem = itemId;
+            playerTeam = selectedKeys.map(idx => {
+                let p = pokemonPool[idx];
+                return { name: p.name, type: p.type, maxHp: p.maxHp, hp: p.maxHp, moves: p.moves, sitrusConsumed: false };
+            });
+            
+            const matchedItem = BattleItems.find(i => i.id === itemId);
+            document.getElementById("player-item-tag").innerText = `Item: ${matchedItem.name}`;
+
+            document.getElementById("item-screen").style.display = "none";
+            document.getElementById("battle-screen").style.display = "block";
+            initBattle();
+        }
+
+        function initBattle() {
+            setPokemonSprites();
+            updateUI();
+            narrate(`${enemyTrainer.title} wants to battle!`, () => {
+                narrate(`${enemyTrainer.name} sends out ${enemyTeam[eActive].name}!`, () => {
+                    narrate(`Go, ${playerTeam[pActive].name}!`, () => {
+                        isPlayerTurn = true; openSubMenu('main');
+                    });
+                });
+            });
+        }
+
+        function setPokemonSprites() {
+            let pSpr = document.getElementById("player-sprite");
+            let eSpr = document.getElementById("enemy-sprite");
+            pSpr.src = `https://play.pokemonshowdown.com/sprites/gen5ani-back/${playerTeam[pActive].name.toLowerCase()}.gif`;
+            eSpr.src = `https://play.pokemonshowdown.com/sprites/gen5ani/${enemyTeam[eActive].name.toLowerCase()}.gif`;
+            pSpr.style.transform = "scale(1)"; eSpr.style.transform = "scale(1)";
+        }
+
+        function updateUI() {
+            let p = playerTeam[pActive]; let e = enemyTeam[eActive];
+
+            document.getElementById("player-name").innerText = p.name;
+            document.getElementById("player-hp-text").innerText = `${p.hp}/${p.maxHp}`;
+            let pPct = (p.hp / p.maxHp) * 100;
+            document.getElementById("player-hp-bar").style.width = pPct + "%";
+            setBarColor(document.getElementById("player-hp-bar"), pPct);
+
+            document.getElementById("enemy-name").innerText = e.name;
+            let ePct = (e.hp / e.maxHp) * 100;
+            document.getElementById("enemy-hp-bar").style.width = ePct + "%";
+            setBarColor(document.getElementById("enemy-hp-bar"), ePct);
+
+            document.getElementById("player-party").innerHTML = "PM: " + playerTeam.map(pk => pk.hp > 0 ? "⬤" : "◯").join("");
+            document.getElementById("enemy-party").innerHTML = "RIVAL: " + enemyTeam.map(pk => pk.hp > 0 ? "⬤" : "◯").join("");
+        }
+
+        function setBarColor(bar, pct) {
+            bar.style.backgroundColor = pct > 50 ? "#22c55e" : pct > 20 ? "#eab308" : "#ef4444";
+        }
+
+        function narrate(text, callback) {
+            closeAllMenus(); 
+            document.getElementById("message").style.display = "block";
+            document.getElementById("message").innerHTML = text;
+            if (callback) setTimeout(callback, 1800);
+        }
+
+        function closeAllMenus() {
+            document.querySelectorAll(".menu-container").forEach(m => m.style.display = "none");
+            document.getElementById("menu-switch").style.display = "none";
+        }
+
+        function openSubMenu(menu) {
+            closeAllMenus();
+            if(!isPlayerTurn && menu !== 'main') return;
+            
+            if (menu === 'main') {
+                document.getElementById("message").style.display = "block";
+                document.getElementById("menu-main").style.display = "flex";
+                document.getElementById("message").innerHTML = `What will<br>${playerTeam[pActive].name} do?`;
+            } else if (menu === 'moves') {
+                document.getElementById("message").style.display = "block";
+                let div = document.getElementById("menu-moves");
+                div.innerHTML = playerTeam[pActive].moves.map(m => {
+                    let btnColor = typeColors[m.t] || "#64748b";
+                    return `<button class="game-btn" style="background-color:${btnColor}; color:white; text-shadow:1px 1px 2px #000; border-color:#0f172a;" onclick="executePlayerMove('${m.n}', ${m.d}, '${m.t}')">${m.n}</button>`;
+                }).join("");
+                div.innerHTML += `<button class="game-btn back-btn" onclick="openSubMenu('main')">BACK</button>`;
+                div.style.display = "flex";
+            } else if (menu === 'switch') {
+                document.getElementById("message").style.display = "none"; // Hide dialog for horizontal layout
+                let div = document.getElementById("menu-switch");
+                
+                div.innerHTML = playerTeam.map((pk, idx) => {
+                    let disabled = (pk.hp <= 0 || idx === pActive) ? 'disabled' : '';
+                    let pct = (pk.hp / pk.maxHp) * 100;
+                    let barColor = pct > 50 ? "#22c55e" : pct > 20 ? "#eab308" : "#ef4444";
+                    return `
+                    <div class="switch-card ${disabled}" onclick="switchActivePokemon(${idx})">
+                        <img src="https://play.pokemonshowdown.com/sprites/gen5/${pk.name.toLowerCase()}.png">
+                        <span>${pk.name}</span>
+                        <div class="hp-bar-container"><div class="hp-bar" style="width:${pct}%; background-color:${barColor};"></div></div>
+                    </div>`;
+                }).join("");
+                
+                div.innerHTML += `<button class="game-btn back-btn" style="min-width:65px; height:70px;" onclick="openSubMenu('main')">BACK</button>`;
+                div.style.display = "flex";
+            } else if (menu === 'potion') {
+                if(potionsLeft > 0) { executePotion(); } else { narrate("No potions left!", () => openSubMenu('main')); }
+            }
+        }
+
+        // VFX Animations Keep Same
+        function triggerAdvancedVfx(type, isEnemyTarget) {
+            const canvas = document.getElementById("vfx-canvas"); canvas.innerHTML = "";
+            const targetSprite = document.getElementById(isEnemyTarget ? "enemy-sprite" : "player-sprite");
+            const tX = isEnemyTarget ? 490 : 160; const tY = isEnemyTarget ? 160 : 245;
+            targetSprite.classList.add(isEnemyTarget ? "hurt-recoil-e" : "hurt-recoil");
+            setTimeout(() => targetSprite.classList.remove("hurt-recoil", "hurt-recoil-e"), 300);
+
+            if (type === "fire") {
+                for(let i=0; i<12; i++) setTimeout(() => { let p = document.createElement("div"); p.className = "vfx-burst"; p.style.left = (tX - 20 + Math.random()*50) + "px"; p.style.top = (tY - 50 + Math.random()*50) + "px"; p.style.width = p.style.height = (20 + Math.random()*20) + "px"; p.style.background = "radial-gradient(circle, #f97316, #ef4444, transparent)"; canvas.appendChild(p); }, i*25);
+            } else if (type === "water") {
+                for(let i=0; i<3; i++) setTimeout(() => { let p = document.createElement("div"); p.className = "vfx-burst"; p.style.left = (tX - 10) + "px"; p.style.top = (tY - 70) + "px"; p.style.width = "75px"; p.style.height = "75px"; p.style.borderRadius = "30% 30% 50% 50%"; p.style.background = "linear-gradient(to top, #3b82f6, #1d4ed8)"; canvas.appendChild(p); }, i * 100);
+            } else if (type === "grass") {
+                for(let i=0; i<10; i++) setTimeout(() => { let p = document.createElement("div"); p.className = "vfx-burst"; p.style.left = (tX + Math.random()*40) + "px"; p.style.top = (tY - 60 + Math.random()*40) + "px"; p.style.width = "25px"; p.style.height = "8px"; p.style.borderRadius = "50% 0 50% 0"; p.style.background = "#22c55e"; p.style.transform = `rotate(${Math.random()*360}deg)`; canvas.appendChild(p); }, i*30);
+            } else if (type === "electric") {
+                targetSprite.style.filter = "brightness(3) saturate(3)"; setTimeout(() => targetSprite.style.filter = "none", 250);
+                for(let i=0; i<5; i++) { let p = document.createElement("div"); p.className = "vfx-burst"; p.style.left = (tX - 20 + Math.random()*40) + "px"; p.style.top = (tY - 60 + Math.random()*40) + "px"; p.style.width = "40px"; p.style.height = "40px"; p.style.border = "3px dashed #eab308"; canvas.appendChild(p); }
+            } else {
+                let p = document.createElement("div"); p.className = "vfx-burst"; p.style.left = (tX - 20) + "px"; p.style.top = (tY - 60) + "px"; p.style.width = p.style.height = "55px"; p.style.background = "radial-gradient(circle, #fff, #64748b, transparent)"; canvas.appendChild(p);
+            }
+        }
+
+        function calculateDamage(moveType, targetType, baseDmg, isPlayerAttacking) {
+            let multiplier = 1; let text = "";
+
+            if (typeChart[moveType] && typeChart[moveType][targetType] !== undefined) multiplier = typeChart[moveType][targetType];
+
+            if (multiplier === 2) text = "<br>It's super effective!";
+            if (multiplier === 0.5) text = "<br>It's not very effective...";
+            if (multiplier === 0) text = "<br>It doesn't affect the opponent...";
+
+            let variance = 0.85 + Math.random() * 0.3;
+            let finalDmg = Math.floor(baseDmg * multiplier * variance);
+
+            if (multiplier > 0) {
+                if (isPlayerAttacking) {
+                    if (chosenCombatItem === "expertbelt" && multiplier === 2) { finalDmg = Math.floor(finalDmg * 1.4); text += "<br>[Expert Belt boosted hit!]"; }
+                    if (chosenCombatItem === "lifeorb") { finalDmg = Math.floor(finalDmg * 1.3); }
+                    if (chosenCombatItem === "choiceband") { finalDmg = Math.floor(finalDmg * 1.5); text += "<br>[Choice Band power!]"; }
+                    if (chosenCombatItem === "muscleband") { finalDmg = Math.floor(finalDmg * 1.15); }
+                }
+                if (!isPlayerAttacking && chosenCombatItem === "assaultvest") { finalDmg = Math.floor(finalDmg * 0.7); text += "<br>[Assault Vest mitigated!]"; }
+            } else { finalDmg = 0; }
+
+            return { damage: finalDmg, message: text, mult: multiplier };
+        }
+
+        function executePlayerMove(name, baseDmg, type) {
+            isPlayerTurn = false;
+            let pSprite = document.getElementById("player-sprite");
+            let container = document.getElementById("game-container");
+            let target = enemyTeam[eActive]; let user = playerTeam[pActive];
+
+            pSprite.classList.add("dash-p");
+            narrate(`${user.name} used<br>${name}!`, () => {
+                pSprite.classList.remove("dash-p");
+                let combat = calculateDamage(type, target.type, baseDmg, true);
+                
+                if (combat.mult > 0) {
+                    triggerAdvancedVfx(type, true);
+                    if (baseDmg >= 60 || type === "ground") container.classList.add("screen-shake");
+                }
+                
+                target.hp -= combat.damage; if (target.hp < 0) target.hp = 0;
+                updateUI();
+
+                setTimeout(() => {
+                    container.classList.remove("screen-shake");
+                    let hitMsg = combat.mult === 0 ? combat.message : `${user.name} dealt ${combat.damage} damage!${combat.message}`;
+                    
+                    narrate(hitMsg, () => {
+                        let skipEnemyTurn = false;
+
+                        if (chosenCombatItem === "kingsrock" && combat.damage > 0 && Math.random() < 0.20) {
+                            skipEnemyTurn = true;
+                            narrate(`[King's Rock] caused ${target.name} to flinch!`, () => { postPlayerMoveChecks(target, skipEnemyTurn); });
+                        } else if (chosenCombatItem === "lifeorb" && combat.mult > 0) {
+                            user.hp -= 15; if(user.hp < 0) user.hp = 0;
+                            updateUI();
+                            narrate(`[Life Orb] recoil hurt<br>${user.name}!`, () => { postPlayerMoveChecks(target, skipEnemyTurn); });
+                        } else if (chosenCombatItem === "shellbell" && combat.damage > 0) {
+                            let heal = Math.floor(combat.damage * 0.25);
+                            user.hp += heal; if (user.hp > user.maxHp) user.hp = user.maxHp;
+                            updateUI();
+                            narrate(`[Shell Bell] drained and healed for +${heal} HP!`, () => { postPlayerMoveChecks(target, skipEnemyTurn); });
+                        } else {
+                            postPlayerMoveChecks(target, skipEnemyTurn);
+                        }
+                    });
+                }, 600);
+            });
+        }
+
+        function postPlayerMoveChecks(target, skipEnemyTurn = false) {
+            let user = playerTeam[pActive];
+            if (user.hp <= 0) {
+                document.getElementById("player-sprite").classList.add("faint-slide");
+                setTimeout(handlePlayerFaint, 600); return;
+            }
+
+            if (target.hp <= 0) {
+                document.getElementById("enemy-sprite").classList.add("faint-slide");
+                setTimeout(handleEnemyFaint, 600);
+            } else {
+                if (user.hp <= user.maxHp * 0.5 && user.hp > 0 && !user.sitrusConsumed && chosenCombatItem === "sitrusberry") {
+                    let h = Math.floor(user.maxHp * 0.3); user.hp += h; if(user.hp > user.maxHp) user.hp = user.maxHp;
+                    user.sitrusConsumed = true; updateUI();
+                    narrate(`[Sitrus Berry] restored ${user.name}'s health!`, () => { skipEnemyTurn ? (isPlayerTurn = true, openSubMenu('main')) : enemyTurn(); });
+                } else if (chosenCombatItem === "leftovers" && user.hp < user.maxHp) {
+                    user.hp += 15; if (user.hp > user.maxHp) user.hp = user.maxHp; updateUI();
+                    narrate(`[Leftovers] restored<br>HP to ${user.name}!`, () => { skipEnemyTurn ? (isPlayerTurn = true, openSubMenu('main')) : enemyTurn(); });
+                } else {
+                    skipEnemyTurn ? (isPlayerTurn = true, openSubMenu('main')) : enemyTurn();
+                }
+            }
+        }
+
+        function enemyTurn() {
+            let e = enemyTeam[eActive]; let target = playerTeam[pActive];
+
+            if (chosenCombatItem === "brightpowder" && Math.random() < 0.15) {
+                narrate(`${target.name} dodged the incoming attack using Bright Powder!`, () => {
+                    postEnemyMoveChecks(e);
+                });
+                return;
+            }
+
+            let move = e.moves[Math.floor(Math.random() * e.moves.length)];
+            let eSprite = document.getElementById("enemy-sprite");
+            let container = document.getElementById("game-container");
+            
+            eSprite.classList.add("dash-e");
+            narrate(`${enemyTrainer.name}'s ${e.name} used<br>${move.n}!`, () => {
+                eSprite.classList.remove("dash-e");
+                let combat = calculateDamage(move.t, target.type, move.d, false);
+                
+                if (combat.mult > 0) {
+                    triggerAdvancedVfx(move.t, false);
+                    if(move.d >= 60) container.classList.add("screen-shake");
+                }
+                
+                // Focus Band Check
+                let fatal = target.hp - combat.damage <= 0;
+                if (fatal && chosenCombatItem === "focusband" && Math.random() < 0.15) {
+                    target.hp = 1; combat.message += "<br>[Focus Band protected you!]";
+                } else {
+                    target.hp -= combat.damage; if (target.hp < 0) target.hp = 0;
+                }
+                updateUI();
+
+                setTimeout(() => {
+                    container.classList.remove("screen-shake");
+                    let hitMsg = combat.mult === 0 ? combat.message : `${e.name} dealt ${combat.damage} damage!${combat.message}`;
+                    
+                    narrate(hitMsg, () => {
+                        if (chosenCombatItem === "rockyhelmet" && target.hp > 0 && combat.mult > 0) {
+                            e.hp -= 20; if (e.hp < 0) e.hp = 0; updateUI();
+                            narrate(`[Rocky Helmet] punished<br>${e.name} for 20 damage!`, () => { postEnemyMoveChecks(e); });
+                        } else {
+                            postEnemyMoveChecks(e);
+                        }
+                    });
+                }, 600);
+            });
+        }
+
+        function postEnemyMoveChecks(enemy) {
+            let target = playerTeam[pActive];
+            if (enemy.hp <= 0) {
+                document.getElementById("enemy-sprite").classList.add("faint-slide");
+                setTimeout(handleEnemyFaint, 600); return;
+            }
+
+            if (target.hp <= 0) {
+                document.getElementById("player-sprite").classList.add("faint-slide");
+                setTimeout(handlePlayerFaint, 600);
+            } else {
+                if (target.hp <= target.maxHp * 0.5 && target.hp > 0 && !target.sitrusConsumed && chosenCombatItem === "sitrusberry") {
+                    let h = Math.floor(target.maxHp * 0.3); target.hp += h; if(target.hp > target.maxHp) target.hp = target.maxHp;
+                    target.sitrusConsumed = true; updateUI();
+                    narrate(`[Sitrus Berry] restored ${target.name}'s health!`, () => { isPlayerTurn = true; openSubMenu('main'); });
+                } else {
+                    isPlayerTurn = true; openSubMenu('main');
+                }
+            }
+        }
+
+        function switchActivePokemon(idx) {
+            isPlayerTurn = false;
+            document.getElementById("player-sprite").classList.add("faint-slide");
+            narrate(`Come back, ${playerTeam[pActive].name}!`, () => {
+                pActive = idx;
+                setPokemonSprites();
+                updateUI();
+                narrate(`Go, ${playerTeam[pActive].name}!`, () => { enemyTurn(); });
+            });
+        }
+
+        function executePotion() {
+            isPlayerTurn = false; potionsLeft--;
+            let p = playerTeam[pActive]; p.hp += 150; if (p.hp > p.maxHp) p.hp = p.maxHp;
+            updateUI();
+            narrate(`Used Max Potion!<br>Restored HP to ${p.name}.`, () => { enemyTurn(); });
+        }
+
+        function handleEnemyFaint() {
+            document.getElementById("enemy-sprite").classList.remove("faint-slide");
+            narrate(`${enemyTeam[eActive].name} fainted!`, () => {
+                eActive++;
+                if (eActive >= enemyTeam.length) {
+                    narrate(`You defeated ${enemyTrainer.title}!<br>You are the absolute Master! 🏆🎉`, null);
+                } else {
+                    narrate(`${enemyTrainer.name} is about to send out ${enemyTeam[eActive].name}.`, () => {
+                        setPokemonSprites(); updateUI();
+                        isPlayerTurn = true; openSubMenu('main');
+                    });
+                }
+            });
+        }
+
+        function handlePlayerFaint() {
+            document.getElementById("player-sprite").classList.remove("faint-slide");
+            narrate(`${playerTeam[pActive].name} fainted!`, () => {
+                let hasAlive = playerTeam.some(pk => pk.hp > 0);
+                if (!hasAlive) {
+                    narrate("You run out of usable Pokémon...<br>You blacked out! Game Over.", null);
+                } else {
+                    closeAllMenus();
+                    document.getElementById("message").style.display = "none";
+                    let div = document.getElementById("menu-switch");
+                    
+                    div.innerHTML = playerTeam.map((pk, idx) => {
+                        let disabled = pk.hp <= 0 ? 'disabled' : '';
+                        let pct = (pk.hp / pk.maxHp) * 100;
+                        let barColor = pct > 50 ? "#22c55e" : pct > 20 ? "#eab308" : "#ef4444";
+                        return `
+                        <div class="switch-card ${disabled}" onclick="forceSwitchActive(${idx})">
+                            <img src="https://play.pokemonshowdown.com/sprites/gen5/${pk.name.toLowerCase()}.png">
+                            <span>${pk.name}</span>
+                            <div class="hp-bar-container"><div class="hp-bar" style="width:${pct}%; background-color:${barColor};"></div></div>
+                        </div>`;
+                    }).join("");
+                    
+                    div.style.display = "flex";
+                }
+            });
+        }
+
+        function forceSwitchActive(idx) {
+            pActive = idx; setPokemonSprites(); updateUI();
+            narrate(`Go, ${playerTeam[pActive].name}!`, () => {
+                isPlayerTurn = true; openSubMenu('main');
+            });
+        }
+    </script>
+</body>
+</html>
